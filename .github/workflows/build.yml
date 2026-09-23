@@ -34,11 +34,11 @@ jobs:
         run: |
           Move-Item -Force `
             "src-tauri/target/release/wwr.exe" `
-            "src-tauri/target/release/Windows Watermark Remover.exe"
+            "src-tauri/target/release/Windows-Watermark-Remover.exe"
 
       - name: Upload portable exe
         uses: actions/upload-artifact@v4
         with:
           name: Windows-Watermark-Remover
-          path: src-tauri/target/release/Windows Watermark Remover.exe
+          path: src-tauri/target/release/Windows-Watermark-Remover.exe
           if-no-files-found: error
