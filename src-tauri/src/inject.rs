@@ -19,21 +19,19 @@ use crate::explorer::{close, explorer_pids, open_explorer, shell32_base};
 pub unsafe fn inject(rva: u32, emit: &dyn Fn(String)) -> Result<(), String> {
     let pids = explorer_pids();
     if pids.is_empty() {
-        return Err("explorer.exe is not running".into());
+        return Err("The desktop shell is not running.".into());
     }
-    emit(format!("Found {} explorer.exe process(es).", pids.len()));
+    emit(format!("Desktop shell processes: {}.", pids.len()));
     for pid in pids {
-        emit(format!("Opening PID {pid}…"));
+        emit("Opening the desktop shell…".into());
         let handle = open_explorer(pid).map_err(|e| {
             format!(
-                "OpenProcess failed for PID {pid}: {e}. Try running as the same user that owns Explorer."
+                "Could not open the desktop shell (PID {pid}): {e}. Run the app as the same Windows user."
             )
         })?;
         let result = (|| -> Result<(), String> {
             let base = shell32_base(handle)?;
-            emit(format!("shell32 base in PID {pid}: {base:#x}"));
             let addr = (base + rva as u64) as *const c_void;
-            emit(format!("Patch address: {addr:?}"));
             let mut old = PAGE_PROTECTION_FLAGS(0);
             VirtualProtectEx(
                 handle,
@@ -42,7 +40,7 @@ pub unsafe fn inject(rva: u32, emit: &dyn Fn(String)) -> Result<(), String> {
                 PAGE_EXECUTE_READWRITE,
                 &mut old,
             )
-            .map_err(|e| format!("VirtualProtectEx failed: {e}"))?;
+            .map_err(|e| format!("Could not unlock shell memory: {e}"))?;
             WriteProcessMemory(
                 handle,
                 addr,
@@ -50,10 +48,10 @@ pub unsafe fn inject(rva: u32, emit: &dyn Fn(String)) -> Result<(), String> {
                 RET.len(),
                 None,
             )
-            .map_err(|e| format!("WriteProcessMemory failed: {e}"))?;
+            .map_err(|e| format!("Could not write the fix: {e}"))?;
             let mut tmp = PAGE_PROTECTION_FLAGS(0);
             let _ = VirtualProtectEx(handle, addr as *mut c_void, RET.len(), old, &mut tmp);
-            emit(format!("Wrote ret opcode to PID {pid}."));
+            emit("Fix written for this shell process.".into());
             Ok(())
         })();
         close(handle);

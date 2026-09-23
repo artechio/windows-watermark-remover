@@ -23,14 +23,13 @@ mod structural_scan;
 
 use log_bus::LogBus;
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PatchResult {
     ok: bool,
     message: String,
-    rva: Option<String>,
 }
 
 #[tauri::command]
@@ -43,23 +42,21 @@ fn remove_watermark(app: AppHandle, logs: State<'_, LogBus>) -> PatchResult {
 
     #[cfg(not(windows))]
     {
-        emit("This app only patches Windows Explorer.".into());
+        emit("This app only runs on Windows.".into());
         return PatchResult {
             ok: false,
             message: "Windows only".into(),
-            rva: None,
         };
     }
 
     #[cfg(windows)]
     {
         match run_patch(&emit) {
-            Ok(rva) => {
-                emit(format!("Done. Patched s_DesktopBuildPaint at RVA {rva:#x}."));
+            Ok(()) => {
+                emit("Done. The desktop watermark should be gone.".into());
                 PatchResult {
                     ok: true,
-                    message: "Watermark paint function disabled in Explorer memory.".into(),
-                    rva: Some(format!("{rva:#x}")),
+                    message: "The evaluation watermark was removed from this session.".into(),
                 }
             }
             Err(err) => {
@@ -67,7 +64,6 @@ fn remove_watermark(app: AppHandle, logs: State<'_, LogBus>) -> PatchResult {
                 PatchResult {
                     ok: false,
                     message: err,
-                    rva: None,
                 }
             }
         }
@@ -79,39 +75,87 @@ fn get_logs(logs: State<'_, LogBus>) -> Vec<String> {
     logs.snapshot()
 }
 
+#[tauri::command]
+fn get_startup_enabled() -> bool {
+    #[cfg(windows)]
+    {
+        startup::is_logon_run_enabled()
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
+}
+
+#[tauri::command]
+fn set_startup_enabled(enabled: bool) -> Result<bool, String> {
+    #[cfg(windows)]
+    {
+        startup::set_logon_run(enabled)?;
+        Ok(enabled)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = enabled;
+        Err("Startup option is only available on Windows.".into())
+    }
+}
+
 #[cfg(windows)]
-fn run_patch(emit: &dyn Fn(String)) -> Result<u32, String> {
-    emit("Waiting for explorer.exe…".into());
+fn run_patch(emit: &dyn Fn(String)) -> Result<(), String> {
+    emit("Waiting for the desktop shell…".into());
     explorer::wait_for_explorer();
 
-    emit(format!("Reading shell32 identity from {}", constants::SHELL32_PATH));
+    emit("Checking this Windows build…".into());
     let cache_key = pe_guid::shell32_cache_key(emit)?;
-    emit(format!("Cache key: {cache_key}"));
 
-    emit("Resolving CDesktopWatermark::s_DesktopBuildPaint…".into());
+    emit("Finding the watermark painter…".into());
     let rva = cache::get_rva(&cache_key, emit)?;
-    emit(format!("Resolved RVA {rva:#x}"));
+    emit("Watermark painter located.".into());
 
-    emit("Writing ret into explorer.exe memory…".into());
+    emit("Applying the fix in memory…".into());
     unsafe {
         inject::inject(rva, emit)?;
-        emit("Refreshing desktop shell…".into());
+        emit("Refreshing the desktop…".into());
         inject::refresh();
     }
 
-    match startup::ensure_logon_run() {
-        Ok(()) => emit("Registered silent re-run at user logon (HKCU Run).".into()),
-        Err(e) => emit(format!("Logon Run registration skipped: {e}")),
-    }
+    Ok(())
+}
 
-    Ok(rva)
+#[tauri::command]
+fn should_auto_apply() -> bool {
+    should_auto_apply_flag()
+}
+
+fn should_auto_apply_flag() -> bool {
+    std::env::args().any(|arg| arg == "--apply")
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let auto_apply = should_auto_apply_flag();
     tauri::Builder::default()
         .manage(LogBus::default())
-        .invoke_handler(tauri::generate_handler![remove_watermark, get_logs])
+        .invoke_handler(tauri::generate_handler![
+            remove_watermark,
+            get_logs,
+            get_startup_enabled,
+            set_startup_enabled,
+            should_auto_apply
+        ])
+        .setup(move |app| {
+            if auto_apply {
+                let handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(800));
+                    let logs = handle.state::<LogBus>();
+                    let result = remove_watermark(handle.clone(), logs);
+                    let _ = handle.emit("wwr-auto-apply", result);
+                });
+            }
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
