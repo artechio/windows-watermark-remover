@@ -27,7 +27,7 @@ jobs:
         run: npm ci --legacy-peer-deps
 
       - name: Build desktop app
-        run: npx tauri build --bundles none
+        run: npx tauri build --no-bundle
 
       - name: Upload portable exe
         uses: actions/upload-artifact@v4
