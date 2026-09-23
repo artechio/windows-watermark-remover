@@ -15,12 +15,40 @@ use windows::Win32::System::Threading::{
 use crate::constants::{EXPLORER_PATH, SHELL32_PATH};
 
 pub fn wait_for_explorer() {
-    for _ in 0..60 {
+    for _ in 0..120 {
         if !explorer_pids().is_empty() {
             return;
         }
         std::thread::sleep(std::time::Duration::from_millis(500));
     }
+}
+
+/// Wait until Explorer is up and the Program Manager desktop window exists.
+/// At sign-in Explorer often restarts; callers should still retry the patch.
+pub fn wait_for_desktop(emit: &dyn Fn(String)) {
+    wait_for_explorer();
+    emit("Desktop shell process found.".into());
+
+    for i in 0..60 {
+        if desktop_ready() {
+            emit("Desktop window is ready.".into());
+            // Give composition a moment so the watermark painter is live.
+            std::thread::sleep(std::time::Duration::from_secs(3));
+            return;
+        }
+        if i % 5 == 0 {
+            emit("Waiting for the desktop window…".into());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+    emit("Desktop window wait timed out — continuing anyway.".into());
+    std::thread::sleep(std::time::Duration::from_secs(2));
+}
+
+fn desktop_ready() -> bool {
+    use windows::core::s;
+    use windows::Win32::UI::WindowsAndMessaging::FindWindowA;
+    unsafe { FindWindowA(s!("Progman"), s!("Program Manager")).0 != 0 }
 }
 
 pub fn explorer_pids() -> Vec<u32> {
