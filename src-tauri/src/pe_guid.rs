@@ -7,11 +7,11 @@ use crate::constants::SHELL32_PATH;
 pub fn shell32_cache_key(emit: &dyn Fn(String)) -> Result<String, String> {
     let dll = std::fs::read(SHELL32_PATH).map_err(|e| e.to_string())?;
     if let Some(guid) = rsds_guid_age(&dll) {
-        emit(format!("Found RSDS debug id: {guid}"));
+        emit("Matched this Windows build.".into());
         return Ok(guid);
     }
-    emit("No RSDS debug directory in shell32.dll — using PE fingerprint and skipping PDB download.".into());
-    pe_fingerprint(&dll).ok_or_else(|| "could not read shell32.dll PE header".into())
+    emit("Build markers were limited — continuing with a local scan.".into());
+    pe_fingerprint(&dll).ok_or_else(|| "Could not read this Windows build.".into())
 }
 
 fn pe_fingerprint(dll: &[u8]) -> Option<String> {

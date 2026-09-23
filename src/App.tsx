@@ -14,14 +14,15 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { Label } from "@/components/ui/label"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Spinner } from "@/components/ui/spinner"
+import { Switch } from "@/components/ui/switch"
 
 type PatchResult = {
   ok: boolean
   message: string
-  rva: string | null
 }
 
 function isTauri(): boolean {
@@ -30,10 +31,12 @@ function isTauri(): boolean {
 
 export function App() {
   const [logs, setLogs] = useState<string[]>([
-    "Ready. Click Remove watermark to patch Explorer.",
+    "Ready. Click Remove watermark when you want to hide the evaluation text.",
   ])
   const [running, setRunning] = useState(false)
   const [result, setResult] = useState<PatchResult | null>(null)
+  const [startupEnabled, setStartupEnabled] = useState(false)
+  const [startupBusy, setStartupBusy] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -44,14 +47,39 @@ export function App() {
     if (!isTauri()) {
       return
     }
-    let unlisten: (() => void) | undefined
+
+    let unlistenLog: (() => void) | undefined
+    let unlistenAuto: (() => void) | undefined
+
     listen<string>("wwr-log", (event) => {
       setLogs((prev) => [...prev, event.payload])
     }).then((fn) => {
-      unlisten = fn
+      unlistenLog = fn
     })
+
+    listen<PatchResult>("wwr-auto-apply", (event) => {
+      setResult(event.payload)
+      setRunning(false)
+    }).then((fn) => {
+      unlistenAuto = fn
+    })
+
+    invoke<boolean>("get_startup_enabled")
+      .then(setStartupEnabled)
+      .catch(() => setStartupEnabled(false))
+
+    invoke<boolean>("should_auto_apply")
+      .then((auto) => {
+        if (auto) {
+          setRunning(true)
+          setLogs(["Signing in… removing the watermark automatically."])
+        }
+      })
+      .catch(() => undefined)
+
     return () => {
-      unlisten?.()
+      unlistenLog?.()
+      unlistenAuto?.()
     }
   }, [])
 
@@ -63,13 +91,11 @@ export function App() {
     if (!isTauri()) {
       setLogs((prev) => [
         ...prev,
-        "Browser preview only — open the built Windows app to patch Explorer.",
-        "In the desktop build, logs stream from the Rust patcher.",
+        "This preview cannot change Windows. Open the desktop app to remove the watermark.",
       ])
       setResult({
         ok: false,
         message: "Not running inside the Windows desktop app.",
-        rva: null,
       })
       setRunning(false)
       return
@@ -81,9 +107,34 @@ export function App() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       setLogs((prev) => [...prev, `ERROR: ${message}`])
-      setResult({ ok: false, message, rva: null })
+      setResult({ ok: false, message })
     } finally {
       setRunning(false)
+    }
+  }
+
+  async function onStartupChange(next: boolean) {
+    if (!isTauri()) {
+      setStartupEnabled(next)
+      return
+    }
+    setStartupBusy(true)
+    try {
+      const enabled = await invoke<boolean>("set_startup_enabled", {
+        enabled: next,
+      })
+      setStartupEnabled(enabled)
+      setLogs((prev) => [
+        ...prev,
+        enabled
+          ? "Startup enabled. The watermark will be removed again after you sign in."
+          : "Startup disabled. The app will not run automatically after sign-in.",
+      ])
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setLogs((prev) => [...prev, `ERROR: ${message}`])
+    } finally {
+      setStartupBusy(false)
     }
   }
 
@@ -104,11 +155,8 @@ export function App() {
               <Badge variant="secondary">Insider</Badge>
             </div>
             <p className="text-sm text-muted-foreground">
-              Patches{" "}
-              <span className="font-mono text-xs">
-                CDesktopWatermark::s_DesktopBuildPaint
-              </span>{" "}
-              in Explorer and shows every step in the log.
+              Hide the evaluation copy text in the corner of your Insider
+              desktop. Clear steps show up in the log as you go.
             </p>
           </div>
         </div>
@@ -126,7 +174,7 @@ export function App() {
               <p className="text-sm font-medium">Activity log</p>
               <Badge variant="outline">{logs.length} lines</Badge>
             </div>
-            <ScrollArea className="h-72 rounded-lg border bg-muted/30">
+            <ScrollArea className="h-64 rounded-lg border bg-muted/30">
               <div className="flex flex-col gap-1 p-3 font-mono text-xs leading-relaxed">
                 {logs.map((line, index) => (
                   <div
@@ -146,18 +194,35 @@ export function App() {
             {result ? (
               <Alert variant={result.ok ? "default" : "destructive"}>
                 {result.ok ? <CheckCircle2Icon /> : <AlertCircleIcon />}
-                <AlertTitle>{result.ok ? "Patched" : "Failed"}</AlertTitle>
-                <AlertDescription>
-                  {result.message}
-                  {result.rva ? ` RVA ${result.rva}` : null}
-                </AlertDescription>
+                <AlertTitle>{result.ok ? "Done" : "Something went wrong"}</AlertTitle>
+                <AlertDescription>{result.message}</AlertDescription>
               </Alert>
+            ) : null}
+
+            {result?.ok || startupEnabled ? (
+              <div className="flex items-start justify-between gap-3 rounded-lg border p-3">
+                <div className="flex min-w-0 flex-col gap-1">
+                  <Label htmlFor="startup-toggle">
+                    Remove again after I sign in
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Optional. The fix only lasts until Explorer or Windows
+                    restarts, so you can let the app run once at sign-in.
+                  </p>
+                </div>
+                <Switch
+                  id="startup-toggle"
+                  checked={startupEnabled}
+                  disabled={startupBusy}
+                  onCheckedChange={onStartupChange}
+                />
+              </div>
             ) : null}
           </CardContent>
           <Separator />
           <CardFooter className="justify-between gap-3">
             <p className="text-xs text-muted-foreground">
-              Memory patch only. Re-applies at logon via HKCU Run.
+              No installer. Does not change Windows activation.
             </p>
             <Button onClick={onRemove} disabled={running}>
               {running ? (

@@ -1,7 +1,7 @@
 use std::io::Read;
 
 pub fn build_url(guid: &str) -> String {
-    // HTTP matches UWD2 and avoids needing a TLS stack when cross-compiling.
+    // Keep the symbol URL HTTP-friendly so cross-compiles do not need a TLS stack.
     format!("http://msdl.microsoft.com/download/symbols/shell32.pdb/{guid}/shell32.pdb")
 }
 

@@ -8,38 +8,34 @@ use crate::parse_pdb::parse_pdb;
 use crate::scan_dll;
 use crate::structural_scan;
 
-/// Resolve CDesktopWatermark::s_DesktopBuildPaint for the current shell32.
+/// Resolve the desktop watermark painter in the current shell32.
 pub fn get_rva(cache_key: &str, emit: &dyn Fn(String)) -> Result<u32, String> {
     let dir = data_dir();
     let rva_path = dir.join(format!("{cache_key}.rva"));
 
     if rva_path.exists() {
-        emit("Using cached RVA file.".into());
+        emit("Using a saved fix for this Windows build.".into());
         let file = fs::read(&rva_path).map_err(|e| e.to_string())?;
         let bytes: [u8; 4] = file
             .try_into()
-            .map_err(|_| "corrupt RVA cache".to_string())?;
+            .map_err(|_| "Saved fix file is unreadable.".to_string())?;
         return Ok(u32::from_be_bytes(bytes));
     }
 
     // Only Microsoft symbol ids look like 32+ hex chars; PE-* fingerprints skip PDB.
     if !cache_key.starts_with("PE-") {
-        emit("Fetching shell32.pdb from Microsoft symbol server…".into());
+        emit("Downloading build symbols from Microsoft…".into());
         let url = fetch_pdb::build_url(cache_key);
-        emit(format!("GET {url}"));
         if let Some(pdbfile) = fetch_pdb::try_fetch(&url) {
-            emit(format!(
-                "Downloaded PDB ({} bytes). Parsing symbols…",
-                pdbfile.len()
-            ));
+            emit("Symbols downloaded. Locating the watermark painter…".into());
             let rva = parse_pdb(pdbfile)?;
-            emit(format!("PDB symbol hit at RVA {rva:#x}"));
+            emit("Found via Microsoft symbols.".into());
             save_rva_and_patterns(&dir, cache_key, rva)?;
             return Ok(rva);
         }
-        emit("Symbol server returned 404 or failed. Trying pattern / structural scan…".into());
+        emit("Symbols are not available yet. Trying a local scan…".into());
     } else {
-        emit("Skipping PDB download for PE fingerprint key.".into());
+        emit("Using a local scan for this build…".into());
     }
 
     let dll_bytes = scan_dll::read_dll()?;
@@ -47,25 +43,22 @@ pub fn get_rva(cache_key: &str, emit: &dyn Fn(String)) -> Result<u32, String> {
         return Ok(rva);
     }
 
-    emit("Running structural SetTextColor scan on shell32.dll…".into());
+    emit("Scanning the desktop shell for the watermark painter…".into());
     if let Some(rva) = structural_scan::find_by_gdi_calls(&dll_bytes) {
         let anchor = scan_dll::read_at_rva(&dll_bytes, rva, 8).unwrap_or_default();
-        emit(format!(
-            "Structural candidate RVA {rva:#x}. Verifying in live Explorer…"
-        ));
+        emit("Candidate found. Checking the live desktop…".into());
         if verify_live(rva, &anchor)? {
-            emit("Live verification OK.".into());
+            emit("Live check passed.".into());
             save_rva_and_patterns(&dir, cache_key, rva)?;
             return Ok(rva);
         }
-        emit("Live verification failed for structural candidate.".into());
+        emit("Live check failed for that candidate.".into());
     } else {
-        emit("Structural scan found no unique candidate.".into());
+        emit("Local scan did not find a unique match.".into());
     }
 
     Err(
-        "could not locate CDesktopWatermark::s_DesktopBuildPaint \
-         (no PDB, no pattern match, structural scan failed)"
+        "Could not find the desktop watermark painter on this Windows build."
             .into(),
     )
 }
@@ -78,18 +71,18 @@ fn try_multi_pattern_scan(
 ) -> Result<Option<u32>, String> {
     let patterns_path = dir.join("patterns.bin");
     if !patterns_path.exists() {
-        emit("No patterns.bin cache yet.".into());
+        emit("No saved local pattern yet.".into());
         return Ok(None);
     }
     let data = fs::read(&patterns_path).map_err(|e| e.to_string())?;
     let Some(patterns) = scan_dll::load_patterns(&data) else {
-        emit("patterns.bin unreadable.".into());
+        emit("Saved pattern file is unreadable.".into());
         return Ok(None);
     };
-    emit(format!("Scanning with {} cached sub-patterns…", patterns.len()));
+    emit("Trying the saved local pattern…".into());
     let hits = scan_dll::scan_for_multi_pattern(dll_bytes, &patterns);
     if hits.len() != 1 {
-        emit(format!("Pattern scan hits: {} (need exactly 1).", hits.len()));
+        emit("Saved pattern did not match this build.".into());
         return Ok(None);
     }
     let Some(rva) = scan_dll::file_offset_to_rva(dll_bytes, hits[0]) else {
@@ -97,13 +90,13 @@ fn try_multi_pattern_scan(
     };
     let anchor = &patterns[0].1;
     if !verify_live(rva, anchor)? {
-        emit("Pattern candidate failed live verification.".into());
+        emit("Saved pattern failed the live check.".into());
         return Ok(None);
     }
     cleanup_old_rva_files(dir);
     fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     fs::write(dir.join(format!("{guid}.rva")), rva.to_be_bytes()).map_err(|e| e.to_string())?;
-    emit(format!("Pattern scan matched RVA {rva:#x}"));
+    emit("Matched with the saved local pattern.".into());
     Ok(Some(rva))
 }
 
@@ -138,7 +131,7 @@ fn verify_live(rva: u32, expected: &[u8]) -> Result<bool, String> {
     let pid = explorer_pids()
         .into_iter()
         .next()
-        .ok_or_else(|| "explorer.exe is not running".to_string())?;
+        .ok_or_else(|| "The desktop shell is not running.".to_string())?;
     unsafe {
         let handle = open_explorer(pid)?;
         let base = match shell32_base(handle) {
