@@ -1,65 +1,62 @@
 # Windows Watermark Remover
 
-Windows Watermark Remover is a portable no-install app that hides the Windows Insider evaluation watermark in the bottom-right corner of the desktop. That line reads “Evaluation copy. Build …” under “Windows 11 Pro Insider Preview”. Download `wwr.exe` and double-click it. There is no setup, no window, and no button to click.
+Windows Watermark Remover is a portable no-install app that hides the Windows Insider evaluation watermark in the bottom-right corner of the desktop. That text looks like:
 
-The desktop picture is cleared too. Windows hides this watermark by turning off desktop background images, so the desktop becomes a solid color. The change stays after a reboot.
+```text
+Windows 11 Pro Insider Preview
+Evaluation copy. Build 26220....
+```
+
+Download `wwr.exe` and double-click it. There is no setup, no window, and no button to click. The watermark disappears from the live desktop. The app also adds itself to the current user’s logon Run key so the patch is applied again after you sign in.
 
 ## Download and run
 
-1. Open the latest successful **Build** run on GitHub Actions and download the `wwr-windows-amd64` artifact, or take `wwr.exe` from a release that attached that file.
-2. Double-click `wwr.exe`. Windows may ask you to confirm an unrecognized app the first time. The program itself shows nothing.
-3. Explorer restarts. The taskbar flashes, open File Explorer windows close, the wallpaper is removed, and the evaluation watermark is hidden.
+1. Open the latest successful **Build** run on GitHub Actions and download the `wwr-windows-amd64` artifact.
+2. Double-click `wwr.exe`. Windows may warn about an unrecognized app once. The program itself shows nothing.
+3. The desktop refreshes and the evaluation watermark is gone.
 
-No administrator account is required. Running the app again writes the same settings and restarts Explorer again.
+No administrator account is required for a normal same-user Explorer process. The first run may need internet access so Microsoft debug symbols for `shell32.dll` can be downloaded. Later runs use a local cache. If symbols are not published yet for a new Insider build, the app falls back to a structural scan of `shell32.dll` on disk.
 
-To build the portable executable yourself:
+Build it yourself on Windows:
 
 ```sh
-GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-H windowsgui -s -w" -o wwr.exe .
+cargo build --release
 ```
 
-## What it changes
+The binary is `target\release\wwr.exe`.
 
-The Insider evaluation watermark on builds such as Windows 11 Beta `26220` is not the optional build-number paint. Setting `PaintDesktopVersion` to `0` leaves “Evaluation copy. Build …” on the desktop. Windows draws that line with the desktop background.
+## How it works
 
-The app turns on the Windows setting **Remove background images (where available)** from Ease of Access. That setting is `SPI_SETDISABLEOVERLAPPEDCONTENT`. Windows documents it as the switch for background images and watermarks. The desktop picture is removed and the corner evaluation text goes with it.
+This uses the same idea as [UWD2](https://github.com/machineonamission/uwd2):
 
-The app also sets `PaintDesktopVersion` to `0` under `HKEY_CURRENT_USER\Control Panel\Desktop`, which hides the separate optional build string.
+1. Locate `CDesktopWatermark::s_DesktopBuildPaint` inside `shell32.dll`.
+2. Prefer Microsoft public symbols (PDB) when they are available, and cache the RVA.
+3. If the symbol server returns 404 for a brand-new Insider build, fall back to a structural scan (GDI `SetTextColor` call sites with white color) and to saved function byte patterns from an earlier successful run.
+4. Write a single `ret` instruction into the matching code in the running `explorer.exe` process.
+5. Refresh the desktop shell so the watermark is redrawn (and therefore skipped).
 
-Nothing is installed. The app does not edit system files, does not install a service, and does not change Windows activation or licensing.
+The patch lives only in Explorer’s memory. It does not modify files under `C:\Windows`. After Explorer or Windows restarts, run `wwr.exe` again, or rely on the logon Run entry the app creates.
 
-## Remove the Insider evaluation watermark
+## What it does not do
 
-`wwr.exe` is a single file. It does not add a Start menu entry or leave a background process running. After it saves the settings, it restarts Explorer so the corner text disappears without a sign-out.
-
-## Run it again
-
-A second run applies the same settings and restarts Explorer again. A normal reboot does not bring the evaluation watermark or the old wallpaper back. Run the file again on another Windows user account if that account should get the same result.
+- It does **not** remove the separate “Activate Windows” watermark.
+- It does **not** change Windows activation or licensing.
+- It does **not** install a driver or a service.
 
 ## Undo
 
-Bring the wallpaper and the evaluation watermark back from Ease of Access:
-
-1. Open Control Panel and go to Ease of Access, then Ease of Access Center.
-2. Open **Make the computer easier to see**.
-3. Clear **Remove background images (where available)** and choose Apply.
-4. Set the desktop background again in Settings.
-
-To show the optional build number as well, set `PaintDesktopVersion` under `HKEY_CURRENT_USER\Control Panel\Desktop` back to `1`, then sign out and back in.
+1. Open Task Manager and restart Windows Explorer, or sign out and back in without letting `wwr.exe` run.
+2. Remove the logon entry: open `regedit`, go to `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run`, and delete `WindowsWatermarkRemover`.
 
 ## FAQ
 
-### Does this remove the Insider Preview evaluation copy watermark?
+### Why did UWD2 stop working on new Insider builds?
 
-Yes. It hides the “Evaluation copy. Build …” desktop watermark, including the one on Windows 11 Insider Beta builds such as `26220`, by turning off desktop background images. The desktop picture is removed with it.
+New Insider builds often publish `shell32` PDBs days later. UWD2 needed that PDB on first run. This app still uses PDBs when present, and uses a no-PDB structural scan plus pattern cache when the symbol server returns 404.
 
-### Do I need an administrator account?
+### Does the watermark stay gone after reboot?
 
-No. Both settings belong to the current user.
-
-### Does this activate Windows?
-
-No. Activation and licensing stay as they are. The separate “Activate Windows” notice is not this evaluation watermark.
+The memory patch does not survive Explorer restart. `wwr.exe` registers itself under the current user’s Run key so it re-applies the patch at logon with no clicks.
 
 ### Is a portable no-install build available?
 

@@ -9,26 +9,22 @@ permissions:
 
 jobs:
   windows-exe:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          go-version-file: go.mod
+          targets: x86_64-pc-windows-msvc
 
       - name: Build portable wwr.exe
-        env:
-          GOOS: windows
-          GOARCH: amd64
-          CGO_ENABLED: "0"
-        run: go build -trimpath -ldflags "-H windowsgui -s -w" -o wwr.exe .
+        run: cargo build --release
 
       - name: Upload wwr.exe
         uses: actions/upload-artifact@v4
         with:
           name: wwr-windows-amd64
-          path: wwr.exe
+          path: target/release/wwr.exe
           if-no-files-found: error
