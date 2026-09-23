@@ -11,6 +11,8 @@ Get the latest build from [Releases](https://github.com/artechio/wwr/releases/la
 3. Click **Remove watermark**
 4. Optionally turn on **Remove again after I sign in** if you want it reapplied at logon
 
+After a reboot, keep that option on and use the latest release — the app re-applies quietly at sign-in for a couple of minutes so the watermark stays gone if Windows refreshes the desktop.
+
 CI builds are also available from [Actions](https://github.com/artechio/wwr/actions) as the `wwr-windows-amd64` artifact.
 
 ## What it does
