@@ -54,6 +54,9 @@ fn remove_watermark(app: AppHandle, logs: State<'_, LogBus>) -> PatchResult {
         match run_patch(&emit, false) {
             Ok(()) => {
                 emit("Done. The desktop watermark should be gone.".into());
+                if let Err(err) = startup::refresh_startup_install_if_enabled() {
+                    emit(format!("Could not refresh the sign-in copy: {err}"));
+                }
                 PatchResult {
                     ok: true,
                     message: "The evaluation watermark was removed from this session.".into(),
@@ -92,7 +95,8 @@ fn set_startup_enabled(enabled: bool) -> Result<bool, String> {
     #[cfg(windows)]
     {
         startup::set_logon_run(enabled)?;
-        Ok(enabled)
+        // Re-read so a missing/stale install is reported accurately.
+        Ok(startup::is_logon_run_enabled())
     }
     #[cfg(not(windows))]
     {
