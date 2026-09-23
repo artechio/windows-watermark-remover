@@ -29,9 +29,16 @@ jobs:
       - name: Build desktop app
         run: npx tauri build --no-bundle
 
+      - name: Name portable exe
+        shell: pwsh
+        run: |
+          Move-Item -Force `
+            "src-tauri/target/release/wwr.exe" `
+            "src-tauri/target/release/Windows Watermark Remover.exe"
+
       - name: Upload portable exe
         uses: actions/upload-artifact@v4
         with:
-          name: wwr-windows-amd64
-          path: src-tauri/target/release/wwr.exe
+          name: Windows-Watermark-Remover
+          path: src-tauri/target/release/Windows Watermark Remover.exe
           if-no-files-found: error
