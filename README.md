@@ -6,14 +6,16 @@ Portable Windows app that hides the Insider **Evaluation copy** watermark in the
 
 Get the latest build from [Releases](https://github.com/artechio/wwr/releases/latest).
 
-1. Download `Windows-Watermark-Remover.exe` or `wwr.exe`
+1. Download **Windows Watermark Remover.exe**
 2. Run it
 3. Click **Remove watermark**
-4. Optionally turn on **Remove again after I sign in** if you want it reapplied at logon
+4. Optionally turn on **Remove again after I sign in**
 
-After a reboot, keep that option on and use the latest release — the app re-applies quietly at sign-in for a couple of minutes so the watermark stays gone if Windows refreshes the desktop.
+When that option is on, the app keeps a silent copy under your Local AppData folder and registers that fixed path for sign-in — so deleting the download on your Desktop does not break it.
 
-CI builds are also available from [Actions](https://github.com/artechio/wwr/actions) as the `wwr-windows-amd64` artifact.
+After a reboot, keep that option on and use the latest release — the silent copy re-applies quietly at sign-in for a couple of minutes so the watermark stays gone if Windows refreshes the desktop.
+
+CI builds are also available from [Actions](https://github.com/artechio/wwr/actions).
 
 ## What it does
 

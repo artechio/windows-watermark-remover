@@ -127,8 +127,8 @@ export function App() {
       setLogs((prev) => [
         ...prev,
         enabled
-          ? "Startup enabled. The watermark will be removed again after you sign in."
-          : "Startup disabled. The app will not run automatically after sign-in.",
+          ? "Sign-in reapply on. A silent copy was saved under your user folder and will run after you sign in."
+          : "Sign-in reapply off. The silent copy and startup entry were removed.",
       ])
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -206,8 +206,9 @@ export function App() {
                     Remove again after I sign in
                   </Label>
                   <p className="text-xs text-muted-foreground">
-                    Optional. The fix only lasts until Explorer or Windows
-                    restarts, so you can let the app run once at sign-in.
+                    Optional. Saves a silent copy in your user folder and runs
+                    it after sign-in — no clicks, and it still works if you
+                    delete this download.
                   </p>
                 </div>
                 <Switch
