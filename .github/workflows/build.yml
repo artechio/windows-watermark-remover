@@ -8,23 +8,30 @@ permissions:
   contents: read
 
 jobs:
-  windows-exe:
+  windows-app:
     runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
 
-      - name: Build portable wwr.exe
-        run: cargo build --release
+      - name: Install frontend dependencies
+        run: npm ci --legacy-peer-deps
 
-      - name: Upload wwr.exe
+      - name: Build desktop app
+        run: npx tauri build --bundles none
+
+      - name: Upload portable exe
         uses: actions/upload-artifact@v4
         with:
           name: wwr-windows-amd64
-          path: target/release/wwr.exe
+          path: src-tauri/target/release/wwr.exe
           if-no-files-found: error

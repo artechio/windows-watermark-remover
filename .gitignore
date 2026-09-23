@@ -1,6 +1,20 @@
-/target/
-**/*.rs.bk
-wwr.exe
-*.exe
-/dist/
+# Dependencies
+/node_modules
+/dist
+/src-tauri/target
+/target
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor
 .idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.exe
+!src-tauri/icons/**
