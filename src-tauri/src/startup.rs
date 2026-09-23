@@ -1,6 +1,8 @@
 //! Optional logon re-apply under the current user Run key.
 
 use std::env;
+use std::fs;
+use std::io::Write;
 
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_SUCCESS};
@@ -10,7 +12,7 @@ use windows::Win32::System::Registry::{
     REG_VALUE_TYPE, RRF_RT_REG_SZ,
 };
 
-use crate::constants::RUN_VALUE_NAME;
+use crate::constants::{data_dir, RUN_VALUE_NAME};
 
 const RUN_SUBKEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 
@@ -18,12 +20,26 @@ fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
-fn run_command_line() -> Result<String, String> {
+pub fn run_command_line() -> Result<String, String> {
     let exe = env::current_exe().map_err(|e| e.to_string())?;
+    // Quote the path; keep --apply outside the quotes so Windows passes it as argv.
     Ok(format!("\"{}\" --apply", exe.to_string_lossy()))
 }
 
+pub fn append_startup_log(line: &str) {
+    let dir = data_dir();
+    let _ = fs::create_dir_all(&dir);
+    let path = dir.join("startup.log");
+    if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(file, "{}", line);
+    }
+}
+
 pub fn is_logon_run_enabled() -> bool {
+    read_run_value().is_some()
+}
+
+fn read_run_value() -> Option<String> {
     let mut subkey = wide(RUN_SUBKEY);
     let mut name = wide(RUN_VALUE_NAME);
     let mut data = vec![0u16; 1024];
@@ -39,8 +55,12 @@ pub fn is_logon_run_enabled() -> bool {
             Some(data.as_mut_ptr() as *mut _),
             Some(&mut data_size),
         );
-        status == ERROR_SUCCESS
+        if status != ERROR_SUCCESS {
+            return None;
+        }
     }
+    let chars = (data_size as usize / 2).saturating_sub(1);
+    Some(String::from_utf16_lossy(&data[..chars]))
 }
 
 pub fn set_logon_run(enabled: bool) -> Result<(), String> {
@@ -53,6 +73,7 @@ pub fn set_logon_run(enabled: bool) -> Result<(), String> {
 
 fn enable_logon_run() -> Result<(), String> {
     let command = run_command_line()?;
+    append_startup_log(&format!("Enabling startup entry: {command}"));
     let value: Vec<u16> = command.encode_utf16().chain(std::iter::once(0)).collect();
     let mut subkey = wide(RUN_SUBKEY);
     let mut name = wide(RUN_VALUE_NAME);
@@ -91,6 +112,7 @@ fn enable_logon_run() -> Result<(), String> {
 }
 
 fn disable_logon_run() -> Result<(), String> {
+    append_startup_log("Disabling startup entry.");
     let mut subkey = wide(RUN_SUBKEY);
     let mut name = wide(RUN_VALUE_NAME);
     unsafe {
