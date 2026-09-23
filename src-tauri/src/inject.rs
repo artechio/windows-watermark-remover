@@ -16,17 +16,24 @@ use crate::constants::RET;
 use crate::explorer::{close, explorer_pids, open_explorer, shell32_base};
 
 /// Patch every running explorer.exe: write `ret` at shell32+rva.
-pub unsafe fn inject(rva: u32) -> Result<(), String> {
+pub unsafe fn inject(rva: u32, emit: &dyn Fn(String)) -> Result<(), String> {
     let pids = explorer_pids();
     if pids.is_empty() {
         return Err("explorer.exe is not running".into());
     }
-    let mut any = false;
+    emit(format!("Found {} explorer.exe process(es).", pids.len()));
     for pid in pids {
-        let handle = open_explorer(pid)?;
+        emit(format!("Opening PID {pid}…"));
+        let handle = open_explorer(pid).map_err(|e| {
+            format!(
+                "OpenProcess failed for PID {pid}: {e}. Try running as the same user that owns Explorer."
+            )
+        })?;
         let result = (|| -> Result<(), String> {
             let base = shell32_base(handle)?;
+            emit(format!("shell32 base in PID {pid}: {base:#x}"));
             let addr = (base + rva as u64) as *const c_void;
+            emit(format!("Patch address: {addr:?}"));
             let mut old = PAGE_PROTECTION_FLAGS(0);
             VirtualProtectEx(
                 handle,
@@ -35,7 +42,7 @@ pub unsafe fn inject(rva: u32) -> Result<(), String> {
                 PAGE_EXECUTE_READWRITE,
                 &mut old,
             )
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| format!("VirtualProtectEx failed: {e}"))?;
             WriteProcessMemory(
                 handle,
                 addr,
@@ -43,20 +50,16 @@ pub unsafe fn inject(rva: u32) -> Result<(), String> {
                 RET.len(),
                 None,
             )
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| format!("WriteProcessMemory failed: {e}"))?;
             let mut tmp = PAGE_PROTECTION_FLAGS(0);
             let _ = VirtualProtectEx(handle, addr as *mut c_void, RET.len(), old, &mut tmp);
+            emit(format!("Wrote ret opcode to PID {pid}."));
             Ok(())
         })();
         close(handle);
         result?;
-        any = true;
     }
-    if any {
-        Ok(())
-    } else {
-        Err("no explorer process patched".into())
-    }
+    Ok(())
 }
 
 pub unsafe fn refresh() {
