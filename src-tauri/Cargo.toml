@@ -1,7 +1,7 @@
 [package]
 name = "wwr"
-version = "2.1.0"
-description = "Windows Insider evaluation watermark remover"
+version = "2.2.0"
+description = "Remove Windows Insider evaluation copy desktop watermark"
 authors = ["artechio"]
 edition = "2021"
 license = "MIT"
