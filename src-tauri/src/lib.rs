@@ -84,12 +84,12 @@ fn run_patch(emit: &dyn Fn(String)) -> Result<u32, String> {
     emit("Waiting for explorer.exe…".into());
     explorer::wait_for_explorer();
 
-    emit(format!("Reading PDB identity from {}", constants::SHELL32_PATH));
-    let guid = pe_guid::shell32_pdb_guid()?;
-    emit(format!("shell32 PDB id: {guid}"));
+    emit(format!("Reading shell32 identity from {}", constants::SHELL32_PATH));
+    let cache_key = pe_guid::shell32_cache_key(emit)?;
+    emit(format!("Cache key: {cache_key}"));
 
     emit("Resolving CDesktopWatermark::s_DesktopBuildPaint…".into());
-    let rva = cache::get_rva(&guid, emit)?;
+    let rva = cache::get_rva(&cache_key, emit)?;
     emit(format!("Resolved RVA {rva:#x}"));
 
     emit("Writing ret into explorer.exe memory…".into());

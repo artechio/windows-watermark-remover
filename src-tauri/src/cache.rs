@@ -9,9 +9,9 @@ use crate::scan_dll;
 use crate::structural_scan;
 
 /// Resolve CDesktopWatermark::s_DesktopBuildPaint for the current shell32.
-pub fn get_rva(guid: &str, emit: &dyn Fn(String)) -> Result<u32, String> {
+pub fn get_rva(cache_key: &str, emit: &dyn Fn(String)) -> Result<u32, String> {
     let dir = data_dir();
-    let rva_path = dir.join(format!("{guid}.rva"));
+    let rva_path = dir.join(format!("{cache_key}.rva"));
 
     if rva_path.exists() {
         emit("Using cached RVA file.".into());
@@ -22,30 +22,40 @@ pub fn get_rva(guid: &str, emit: &dyn Fn(String)) -> Result<u32, String> {
         return Ok(u32::from_be_bytes(bytes));
     }
 
-    emit("Fetching shell32.pdb from Microsoft symbol server…".into());
-    let url = fetch_pdb::build_url(guid);
-    emit(format!("GET {url}"));
-    if let Some(pdbfile) = fetch_pdb::try_fetch(&url) {
-        emit(format!("Downloaded PDB ({} bytes). Parsing symbols…", pdbfile.len()));
-        let rva = parse_pdb(pdbfile)?;
-        emit(format!("PDB symbol hit at RVA {rva:#x}"));
-        save_rva_and_patterns(&dir, guid, rva)?;
-        return Ok(rva);
+    // Only Microsoft symbol ids look like 32+ hex chars; PE-* fingerprints skip PDB.
+    if !cache_key.starts_with("PE-") {
+        emit("Fetching shell32.pdb from Microsoft symbol server…".into());
+        let url = fetch_pdb::build_url(cache_key);
+        emit(format!("GET {url}"));
+        if let Some(pdbfile) = fetch_pdb::try_fetch(&url) {
+            emit(format!(
+                "Downloaded PDB ({} bytes). Parsing symbols…",
+                pdbfile.len()
+            ));
+            let rva = parse_pdb(pdbfile)?;
+            emit(format!("PDB symbol hit at RVA {rva:#x}"));
+            save_rva_and_patterns(&dir, cache_key, rva)?;
+            return Ok(rva);
+        }
+        emit("Symbol server returned 404 or failed. Trying pattern / structural scan…".into());
+    } else {
+        emit("Skipping PDB download for PE fingerprint key.".into());
     }
-    emit("Symbol server returned 404 or failed. Trying pattern / structural scan…".into());
 
     let dll_bytes = scan_dll::read_dll()?;
-    if let Some(rva) = try_multi_pattern_scan(&dir, guid, &dll_bytes, emit)? {
+    if let Some(rva) = try_multi_pattern_scan(&dir, cache_key, &dll_bytes, emit)? {
         return Ok(rva);
     }
 
     emit("Running structural SetTextColor scan on shell32.dll…".into());
     if let Some(rva) = structural_scan::find_by_gdi_calls(&dll_bytes) {
         let anchor = scan_dll::read_at_rva(&dll_bytes, rva, 8).unwrap_or_default();
-        emit(format!("Structural candidate RVA {rva:#x}. Verifying in live Explorer…"));
+        emit(format!(
+            "Structural candidate RVA {rva:#x}. Verifying in live Explorer…"
+        ));
         if verify_live(rva, &anchor)? {
             emit("Live verification OK.".into());
-            save_rva_and_patterns(&dir, guid, rva)?;
+            save_rva_and_patterns(&dir, cache_key, rva)?;
             return Ok(rva);
         }
         emit("Live verification failed for structural candidate.".into());
