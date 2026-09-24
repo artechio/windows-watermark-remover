@@ -2,9 +2,11 @@
 
 Portable Windows app that hides the Insider **Evaluation copy** watermark in the desktop corner. No installer. Does not change Windows activation.
 
+![Windows Watermark Remover app window](docs/app-screenshot.png)
+
 ## Download
 
-Get the latest build from [Releases](https://github.com/artechio/wwr/releases/latest).
+Get the latest build from [Releases](https://github.com/artechio/windows-watermark-remover/releases/latest).
 
 1. Download **Windows-Watermark-Remover.exe**
 2. Run it
@@ -15,7 +17,7 @@ When that option is on, the app keeps a silent copy as **Windows Watermark Remov
 
 After a reboot, keep that option on and use the latest release — the silent copy re-applies quietly at sign-in for a couple of minutes so the watermark stays gone if Windows refreshes the desktop.
 
-CI builds are also available from [Actions](https://github.com/artechio/wwr/actions).
+CI builds are also available from [Actions](https://github.com/artechio/windows-watermark-remover/actions).
 
 ## What it does
 
